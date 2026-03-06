@@ -218,7 +218,6 @@ export function NodeCanvas() {
             : null
         }
         hoveredConnectionId={hoveredConnectionId}
-        containerRef={canvasRef}
       />
 
       {/* Nodes */}

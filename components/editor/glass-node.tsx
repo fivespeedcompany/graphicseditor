@@ -68,6 +68,9 @@ export function GlassNode({
     setIsDragging(true)
     selectNode(node.id)
 
+    // Disable CSS transition immediately so position tracks the cursor with zero delay
+    if (nodeRef.current) nodeRef.current.style.transition = 'none'
+
     dragStart.current = {
       x: e.clientX,
       y: e.clientY,
@@ -80,12 +83,19 @@ export function GlassNode({
       const dy = e.clientY - dragStart.current.y
       const newX = dragStart.current.nodeX + dx
       const newY = dragStart.current.nodeY + dy
+      // Update DOM directly — no React render cycle, position is instant
+      if (nodeRef.current) {
+        nodeRef.current.style.left = `${newX}px`
+        nodeRef.current.style.top = `${newY}px`
+      }
       updateNodePosition(node.id, newX, newY)
       onDragMove(node.id, newX, newY)
     }
 
     const handleMouseUp = () => {
       setIsDragging(false)
+      // Restore transition after drag ends
+      if (nodeRef.current) nodeRef.current.style.transition = ''
       onDragEnd(node.id)
       window.removeEventListener('mousemove', handleMouseMove)
       window.removeEventListener('mouseup', handleMouseUp)

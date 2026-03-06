@@ -1,7 +1,16 @@
 'use client'
 
 import { useNodeStore } from '@/lib/node-store'
-import { useMemo, useState, useEffect, useLayoutEffect } from 'react'
+import { useMemo, useState, useEffect } from 'react'
+import { NodeData } from '@/lib/node-types'
+
+// Node layout constants — keep in sync with glass-node.tsx dimensions.
+const NODE_WIDTH = 224
+const HEADER_HEIGHT = 40
+const PARAM_HEIGHT = 50
+const PORT_INSET = 18
+const BODY_PADDING = 12
+const SPECIAL_CONTENT_HEIGHT = 64
 
 interface ConnectionLinesProps {
   tempConnection: {
@@ -11,16 +20,31 @@ interface ConnectionLinesProps {
     toY: number
   } | null
   hoveredConnectionId: string | null
-  containerRef: React.RefObject<HTMLDivElement>
 }
 
-type PortPos = { x: number; y: number }
-type PortPositions = Record<string, { input?: PortPos; output?: PortPos }>
+function getOutputPort(node: NodeData) {
+  return {
+    x: node.x + NODE_WIDTH - 28,
+    y: node.y + HEADER_HEIGHT / 2,
+  }
+}
 
-export function ConnectionLines({ tempConnection, hoveredConnectionId, containerRef }: ConnectionLinesProps) {
+function getInputPort(node: NodeData) {
+  const paramCount = Object.keys(node.params).length
+  const hasSpecialContent = node.type === 'output' || node.type === 'image-input'
+  const bodyHeight =
+    paramCount * PARAM_HEIGHT +
+    (hasSpecialContent ? SPECIAL_CONTENT_HEIGHT : 0) +
+    BODY_PADDING * 2
+  return {
+    x: node.x + PORT_INSET,
+    y: node.y + HEADER_HEIGHT + bodyHeight - 20,
+  }
+}
+
+export function ConnectionLines({ tempConnection, hoveredConnectionId }: ConnectionLinesProps) {
   const { nodes, connections, removeConnection } = useNodeStore()
   const [selectedConnectionId, setSelectedConnectionId] = useState<string | null>(null)
-  const [portPositions, setPortPositions] = useState<PortPositions>({})
 
   // Delete / Backspace removes the selected connection
   useEffect(() => {
@@ -35,37 +59,17 @@ export function ConnectionLines({ tempConnection, hoveredConnectionId, container
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [selectedConnectionId, removeConnection])
 
-  // Re-read port positions from the DOM whenever nodes or connections change.
-  // Scoped deps prevent running on every render, eliminating the re-render loop
-  // and the expensive JSON.stringify comparison.
-  useLayoutEffect(() => {
-    const container = containerRef.current
-    if (!container) return
-    const containerRect = container.getBoundingClientRect()
-    const next: PortPositions = {}
-
-    container.querySelectorAll<HTMLElement>('[data-port-node]').forEach(el => {
-      const nodeId = el.dataset.portNode!
-      const portType = el.dataset.portType as 'input' | 'output'
-      const r = el.getBoundingClientRect()
-      if (!next[nodeId]) next[nodeId] = {}
-      next[nodeId][portType] = {
-        x: r.left + r.width / 2 - containerRect.left,
-        y: r.top + r.height / 2 - containerRect.top,
-      }
-    })
-
-    setPortPositions(next)
-  }, [nodes, connections])
-
   const connectionPaths = useMemo(() => {
+    const nodeMap = new Map(nodes.map(n => [n.id, n]))
     return connections.map(conn => {
-      const fromPos = portPositions[conn.fromNodeId]?.output
-      const toPos = portPositions[conn.toNodeId]?.input
-      if (!fromPos || !toPos) return null
+      const fromNode = nodeMap.get(conn.fromNodeId)
+      const toNode = nodeMap.get(conn.toNodeId)
+      if (!fromNode || !toNode) return null
+      const fromPos = getOutputPort(fromNode)
+      const toPos = getInputPort(toNode)
       return { id: conn.id, fromX: fromPos.x, fromY: fromPos.y, toX: toPos.x, toY: toPos.y }
     }).filter(Boolean)
-  }, [connections, portPositions])
+  }, [connections, nodes])
 
   const createPath = (fromX: number, fromY: number, toX: number, toY: number) => {
     const dx = Math.abs(toX - fromX)
