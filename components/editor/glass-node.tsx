@@ -1,0 +1,259 @@
+'use client'
+
+import { useRef, useCallback, useState } from 'react'
+import { NodeData } from '@/lib/node-types'
+import { useNodeStore } from '@/lib/node-store'
+import { loadImage, openImageDialog } from '@/lib/tauri-bridge'
+import { cn } from '@/lib/utils'
+import { X, Image, Sun, Droplets, Palette, RotateCcw, Circle, Sparkles, Volume2, Target, Upload } from 'lucide-react'
+
+interface GlassNodeProps {
+  node: NodeData
+  isInChain: boolean
+  onStartConnection: (nodeId: string, portId: string, portType: 'input' | 'output', event: React.MouseEvent) => void
+  onEndConnection: (nodeId: string, portId: string) => void
+  onDragMove: (nodeId: string, x: number, y: number) => void
+  onDragEnd: (nodeId: string) => void
+}
+
+const nodeIcons: Record<string, React.ReactNode> = {
+  'image-input': <Image className="w-3.5 h-3.5" />,
+  'brightness-contrast': <Sun className="w-3.5 h-3.5" />,
+  'blur': <Circle className="w-3.5 h-3.5" />,
+  'saturation': <Droplets className="w-3.5 h-3.5" />,
+  'hue-shift': <Palette className="w-3.5 h-3.5" />,
+  'invert': <RotateCcw className="w-3.5 h-3.5" />,
+  'grayscale': <Circle className="w-3.5 h-3.5" />,
+  'sharpen': <Sparkles className="w-3.5 h-3.5" />,
+  'noise': <Volume2 className="w-3.5 h-3.5" />,
+  'vignette': <Target className="w-3.5 h-3.5" />,
+  'output': <Image className="w-3.5 h-3.5" />,
+}
+
+export function GlassNode({
+  node,
+  isInChain,
+  onStartConnection,
+  onEndConnection,
+  onDragMove,
+  onDragEnd,
+}: GlassNodeProps) {
+  const {
+    updateNodePosition,
+    updateNodeParam,
+    removeNode,
+    selectNode,
+    selectedNodeId,
+    setImageLoaded,
+    setBackgroundImage,
+  } = useNodeStore()
+  const nodeRef = useRef<HTMLDivElement>(null)
+  const [isDragging, setIsDragging] = useState(false)
+  const [loadedFileName, setLoadedFileName] = useState<string | null>(null)
+  const dragStart = useRef({ x: 0, y: 0, nodeX: 0, nodeY: 0 })
+
+  const isSelected = selectedNodeId === node.id
+
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    const target = e.target as HTMLElement
+    if (
+      target.closest('.port') ||
+      target.closest('input') ||
+      target.closest('button')
+    ) {
+      return
+    }
+
+    e.preventDefault()
+    setIsDragging(true)
+    selectNode(node.id)
+
+    dragStart.current = {
+      x: e.clientX,
+      y: e.clientY,
+      nodeX: node.x,
+      nodeY: node.y,
+    }
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const dx = e.clientX - dragStart.current.x
+      const dy = e.clientY - dragStart.current.y
+      const newX = dragStart.current.nodeX + dx
+      const newY = dragStart.current.nodeY + dy
+      updateNodePosition(node.id, newX, newY)
+      onDragMove(node.id, newX, newY)
+    }
+
+    const handleMouseUp = () => {
+      setIsDragging(false)
+      onDragEnd(node.id)
+      window.removeEventListener('mousemove', handleMouseMove)
+      window.removeEventListener('mouseup', handleMouseUp)
+    }
+
+    window.addEventListener('mousemove', handleMouseMove)
+    window.addEventListener('mouseup', handleMouseUp)
+  }, [node.id, node.x, node.y, updateNodePosition, selectNode, onDragMove, onDragEnd])
+
+  const handleParamChange = (param: string, value: number) => {
+    updateNodeParam(node.id, param, value)
+  }
+
+  const handleImageUpload = useCallback(async (e: React.MouseEvent) => {
+    e.stopPropagation()
+    const path = await openImageDialog()
+    if (!path) return
+    try {
+      await loadImage(path)
+      const { convertFileSrc } = await import('@tauri-apps/api/core')
+      setImageLoaded(true)
+      setBackgroundImage(convertFileSrc(path))
+      setLoadedFileName(path.split(/[\\/]/).pop() ?? path)
+    } catch (err) {
+      console.error('Failed to load image:', err)
+    }
+  }, [setImageLoaded, setBackgroundImage])
+
+  return (
+    <div
+      ref={nodeRef}
+      className={cn(
+        'absolute w-56 rounded-xl overflow-hidden transition-all duration-150 select-none',
+        'bg-[rgba(15,15,15,0.8)] backdrop-blur-2xl',
+        'border border-[rgba(255,255,255,0.06)]',
+        'shadow-[0_8px_32px_rgba(0,0,0,0.5),inset_0_1px_0_rgba(255,255,255,0.03)]',
+        isDragging && 'cursor-grabbing scale-[1.02] shadow-[0_16px_48px_rgba(0,0,0,0.6)]',
+        isSelected && 'border-[rgba(255,255,255,0.15)] ring-1 ring-white/10',
+        !isInChain && 'opacity-40'
+      )}
+      style={{
+        left: node.x,
+        top: node.y,
+        zIndex: isSelected ? 100 : 10,
+      }}
+      onMouseDown={handleMouseDown}
+    >
+      {/* Header */}
+      <div className="flex items-center justify-between px-3 py-2.5 border-b border-[rgba(255,255,255,0.06)]">
+        <div className="flex items-center gap-2">
+          <div className="text-white/60">{nodeIcons[node.type]}</div>
+          <span className="text-xs font-medium text-white/90 tracking-wide">
+            {node.label}
+          </span>
+        </div>
+        <div className="flex items-center gap-1">
+          {node.outputs.length > 0 && (
+            <div
+              data-port-node={node.id}
+              data-port-type="output"
+              className="port w-3.5 h-3.5 rounded-full border-[1.5px] border-white/50 bg-white/5 hover:border-white hover:bg-white/30 hover:scale-125 cursor-crosshair transition-all duration-200"
+              onMouseDown={(e) => {
+                e.stopPropagation()
+                onStartConnection(node.id, node.outputs[0].id, 'output', e)
+              }}
+            />
+          )}
+          {node.type !== 'image-input' && node.type !== 'output' && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                removeNode(node.id)
+              }}
+              className="ml-1 p-0.5 rounded hover:bg-white/10 text-white/40 hover:text-white/80 transition-colors"
+            >
+              <X className="w-3 h-3" />
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Body */}
+      <div className="p-3 space-y-3">
+        {/* Parameters */}
+        {Object.entries(node.params).map(([key, value]) => (
+          <div key={key} className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <label className="text-[10px] uppercase tracking-wider text-white/40">
+                {key.replace(/-/g, ' ')}
+              </label>
+              <span className="text-[10px] font-mono text-white/60">
+                {typeof value === 'number' ? value.toFixed(0) : value}
+              </span>
+            </div>
+            <div className="relative h-5 flex items-center group">
+              <div className="absolute inset-0 flex items-center">
+                <div className="w-full h-[3px] rounded-full bg-white/[0.07]" />
+              </div>
+              <input
+                type="range"
+                min={key === 'degrees' ? -180 : key === 'brightness' || key === 'contrast' ? -100 : 0}
+                max={key === 'degrees' ? 180 : key === 'radius' ? 20 : key === 'brightness' || key === 'contrast' ? 100 : 100}
+                value={value}
+                onChange={(e) => handleParamChange(key, parseFloat(e.target.value))}
+                className="relative w-full h-[3px] appearance-none bg-transparent rounded-full cursor-pointer z-10
+                  [&::-webkit-slider-thumb]:appearance-none
+                  [&::-webkit-slider-thumb]:w-2.5
+                  [&::-webkit-slider-thumb]:h-2.5
+                  [&::-webkit-slider-thumb]:rounded-full
+                  [&::-webkit-slider-thumb]:bg-white
+                  [&::-webkit-slider-thumb]:shadow-[0_0_8px_rgba(255,255,255,0.3)]
+                  [&::-webkit-slider-thumb]:cursor-pointer
+                  [&::-webkit-slider-thumb]:transition-all
+                  [&::-webkit-slider-thumb]:duration-150
+                  [&::-webkit-slider-thumb]:hover:scale-150
+                  [&::-webkit-slider-thumb]:hover:shadow-[0_0_12px_rgba(255,255,255,0.5)]
+                  [&::-moz-range-thumb]:w-2.5
+                  [&::-moz-range-thumb]:h-2.5
+                  [&::-moz-range-thumb]:rounded-full
+                  [&::-moz-range-thumb]:bg-white
+                  [&::-moz-range-thumb]:shadow-[0_0_8px_rgba(255,255,255,0.3)]
+                  [&::-moz-range-thumb]:border-0
+                  [&::-moz-range-thumb]:cursor-pointer
+                  [&::-moz-range-track]:bg-transparent"
+              />
+            </div>
+          </div>
+        ))}
+
+        {/* Input port at bottom */}
+        {node.inputs.length > 0 && (
+          <div className="flex items-center gap-2.5 pt-2 border-t border-white/5 mt-1">
+            <div
+              data-port-node={node.id}
+              data-port-type="input"
+              className="port w-3.5 h-3.5 rounded-full border-[1.5px] border-white/50 bg-white/5 hover:border-white hover:bg-white/30 hover:scale-125 cursor-crosshair transition-all duration-200"
+              onMouseDown={(e) => {
+                e.stopPropagation()
+                onStartConnection(node.id, node.inputs[0].id, 'input', e)
+              }}
+              onMouseUp={() => onEndConnection(node.id, node.inputs[0].id)}
+            />
+            <span className="text-[10px] text-white/40 uppercase tracking-wider">
+              {node.inputs[0].label}
+            </span>
+          </div>
+        )}
+
+        {/* Image Input special content */}
+        {node.type === 'image-input' && (
+          <button
+            onClick={handleImageUpload}
+            className="w-full flex flex-col items-center justify-center gap-1.5 h-14 rounded-lg bg-white/5 border border-dashed border-white/10 hover:bg-white/10 hover:border-white/20 transition-all duration-150 cursor-pointer"
+          >
+            <Upload className="w-3.5 h-3.5 text-white/40" />
+            <span className="text-[10px] text-white/40 truncate max-w-full px-2">
+              {loadedFileName ?? 'Upload Image'}
+            </span>
+          </button>
+        )}
+
+        {/* Output special content */}
+        {node.type === 'output' && (
+          <div className="flex items-center justify-center h-12 rounded-lg bg-white/5 border border-dashed border-white/10">
+            <span className="text-[10px] text-white/40">Final Output</span>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
