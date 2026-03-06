@@ -35,8 +35,9 @@ export function ConnectionLines({ tempConnection, hoveredConnectionId, container
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [selectedConnectionId, removeConnection])
 
-  // After every render, read the actual pixel-center of each port circle from the DOM.
-  // Returns prev reference unchanged when nothing moved, preventing re-render loops.
+  // Re-read port positions from the DOM whenever nodes or connections change.
+  // Scoped deps prevent running on every render, eliminating the re-render loop
+  // and the expensive JSON.stringify comparison.
   useLayoutEffect(() => {
     const container = containerRef.current
     if (!container) return
@@ -54,11 +55,8 @@ export function ConnectionLines({ tempConnection, hoveredConnectionId, container
       }
     })
 
-    setPortPositions(prev => {
-      if (JSON.stringify(prev) === JSON.stringify(next)) return prev
-      return next
-    })
-  })
+    setPortPositions(next)
+  }, [nodes, connections])
 
   const connectionPaths = useMemo(() => {
     return connections.map(conn => {
