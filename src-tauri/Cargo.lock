@@ -2830,6 +2830,7 @@ dependencies = [
  "fast_image_resize",
  "image",
  "imageproc",
+ "rayon",
  "serde",
  "serde_json",
  "tauri",

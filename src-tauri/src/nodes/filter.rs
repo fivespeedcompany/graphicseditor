@@ -1,5 +1,6 @@
 use super::NodeExecutor;
-use image::{DynamicImage, ImageBuffer, Rgba};
+use image::{DynamicImage, ImageBuffer};
+use rayon::prelude::*;
 use std::sync::Arc;
 
 // --- Blur (Gaussian) ---
@@ -35,20 +36,28 @@ impl NodeExecutor for SharpenNode {
         let rgba = input.to_rgba8();
         let blurred = imageproc::filter::gaussian_blur_f32(&rgba, 1.0);
         let strength = self.amount / 100.0;
-        let result = ImageBuffer::from_fn(rgba.width(), rgba.height(), |x, y| {
-            let orig = rgba.get_pixel(x, y);
-            let blur = blurred.get_pixel(x, y);
-            Rgba([
-                (orig[0] as f32 + strength * (orig[0] as f32 - blur[0] as f32))
-                    .clamp(0.0, 255.0) as u8,
-                (orig[1] as f32 + strength * (orig[1] as f32 - blur[1] as f32))
-                    .clamp(0.0, 255.0) as u8,
-                (orig[2] as f32 + strength * (orig[2] as f32 - blur[2] as f32))
-                    .clamp(0.0, 255.0) as u8,
-                orig[3],
-            ])
-        });
-        Ok(Arc::new(DynamicImage::ImageRgba8(result)))
+        let (width, height) = (rgba.width(), rgba.height());
+
+        let rgba_raw = rgba.into_raw();
+        let blur_raw = blurred.into_raw();
+        let mut result_raw = rgba_raw.clone();
+
+        result_raw
+            .par_chunks_exact_mut(4)
+            .zip(rgba_raw.par_chunks_exact(4))
+            .zip(blur_raw.par_chunks_exact(4))
+            .for_each(|((out, orig), blur)| {
+                for ch in 0..3 {
+                    out[ch] = (orig[ch] as f32 + strength * (orig[ch] as f32 - blur[ch] as f32))
+                        .clamp(0.0, 255.0) as u8;
+                }
+                out[3] = orig[3];
+            });
+
+        Ok(Arc::new(DynamicImage::ImageRgba8(
+            ImageBuffer::from_raw(width, height, result_raw)
+                .ok_or("Failed to create sharpen buffer")?,
+        )))
     }
 }
 
@@ -65,18 +74,23 @@ impl NodeExecutor for NoiseNode {
             return Ok(input);
         }
         let rgba = input.to_rgba8();
+        let (w, h) = (rgba.width(), rgba.height());
         let strength = self.amount / 100.0 * 128.0;
-        let result = ImageBuffer::from_fn(rgba.width(), rgba.height(), |x, y| {
-            let pixel = rgba.get_pixel(x, y);
-            let noise = pseudo_noise(x, y) * strength;
-            Rgba([
-                (pixel[0] as f32 + noise).clamp(0.0, 255.0) as u8,
-                (pixel[1] as f32 + noise).clamp(0.0, 255.0) as u8,
-                (pixel[2] as f32 + noise).clamp(0.0, 255.0) as u8,
-                pixel[3],
-            ])
-        });
-        Ok(Arc::new(DynamicImage::ImageRgba8(result)))
+        let wu = w as usize;
+
+        let mut raw = rgba.into_raw();
+        raw.par_chunks_exact_mut(4)
+            .enumerate()
+            .for_each(|(i, p)| {
+                let noise = pseudo_noise((i % wu) as u32, (i / wu) as u32) * strength;
+                p[0] = (p[0] as f32 + noise).clamp(0.0, 255.0) as u8;
+                p[1] = (p[1] as f32 + noise).clamp(0.0, 255.0) as u8;
+                p[2] = (p[2] as f32 + noise).clamp(0.0, 255.0) as u8;
+            });
+
+        Ok(Arc::new(DynamicImage::ImageRgba8(
+            ImageBuffer::from_raw(w, h, raw).unwrap(),
+        )))
     }
 }
 

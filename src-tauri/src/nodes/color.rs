@@ -1,5 +1,6 @@
 use super::NodeExecutor;
-use image::{DynamicImage, ImageBuffer, Rgba};
+use image::{DynamicImage, ImageBuffer};
+use rayon::prelude::*;
 use std::sync::Arc;
 
 // --- BrightnessContrast ---
@@ -12,23 +13,25 @@ pub struct BrightnessContrastNode {
 impl NodeExecutor for BrightnessContrastNode {
     fn execute(&self, inputs: Vec<Arc<DynamicImage>>) -> Result<Arc<DynamicImage>, String> {
         let input = inputs.into_iter().next().ok_or("No input")?;
-        let mut out = input.to_rgba8();
-
+        let rgba = input.to_rgba8();
+        let (w, h) = (rgba.width(), rgba.height());
         let b = self.brightness / 100.0;
         let c = (self.contrast / 100.0) + 1.0;
 
-        for pixel in out.pixels_mut() {
-            let [r, g, b_ch, a] = pixel.0;
+        let mut raw = rgba.into_raw();
+        raw.par_chunks_exact_mut(4).for_each(|p| {
             let apply = |v: u8| -> u8 {
                 let f = v as f32 / 255.0;
-                let brightened = f + b;
-                let contrasted = (brightened - 0.5) * c + 0.5;
-                (contrasted.clamp(0.0, 1.0) * 255.0) as u8
+                ((((f + b) - 0.5) * c + 0.5).clamp(0.0, 1.0) * 255.0) as u8
             };
-            *pixel = Rgba([apply(r), apply(g), apply(b_ch), a]);
-        }
+            p[0] = apply(p[0]);
+            p[1] = apply(p[1]);
+            p[2] = apply(p[2]);
+        });
 
-        Ok(Arc::new(DynamicImage::ImageRgba8(out)))
+        Ok(Arc::new(DynamicImage::ImageRgba8(
+            ImageBuffer::from_raw(w, h, raw).unwrap(),
+        )))
     }
 }
 
@@ -44,17 +47,22 @@ impl NodeExecutor for GrayscaleNode {
         let amount = (self.amount / 100.0).clamp(0.0, 1.0);
         let gray = input.grayscale().to_rgba8();
         let original = input.to_rgba8();
-        let mixed = ImageBuffer::from_fn(gray.width(), gray.height(), |x, y| {
-            let g = gray.get_pixel(x, y);
-            let o = original.get_pixel(x, y);
-            Rgba([
-                (g[0] as f32 * amount + o[0] as f32 * (1.0 - amount)) as u8,
-                (g[1] as f32 * amount + o[1] as f32 * (1.0 - amount)) as u8,
-                (g[2] as f32 * amount + o[2] as f32 * (1.0 - amount)) as u8,
-                o[3],
-            ])
-        });
-        Ok(Arc::new(DynamicImage::ImageRgba8(mixed)))
+        let (w, h) = (original.width(), original.height());
+        let gray_raw = gray.into_raw();
+        let mut orig_raw = original.into_raw();
+
+        orig_raw
+            .par_chunks_exact_mut(4)
+            .zip(gray_raw.par_chunks_exact(4))
+            .for_each(|(o, g)| {
+                o[0] = (g[0] as f32 * amount + o[0] as f32 * (1.0 - amount)) as u8;
+                o[1] = (g[1] as f32 * amount + o[1] as f32 * (1.0 - amount)) as u8;
+                o[2] = (g[2] as f32 * amount + o[2] as f32 * (1.0 - amount)) as u8;
+            });
+
+        Ok(Arc::new(DynamicImage::ImageRgba8(
+            ImageBuffer::from_raw(w, h, orig_raw).unwrap(),
+        )))
     }
 }
 
@@ -69,20 +77,22 @@ impl NodeExecutor for SaturationNode {
         let input = inputs.into_iter().next().ok_or("No input")?;
         let factor = self.amount / 100.0;
         let rgba = input.to_rgba8();
-        let result = ImageBuffer::from_fn(rgba.width(), rgba.height(), |x, y| {
-            let p = rgba.get_pixel(x, y);
+        let (w, h) = (rgba.width(), rgba.height());
+
+        let mut raw = rgba.into_raw();
+        raw.par_chunks_exact_mut(4).for_each(|p| {
             let r = p[0] as f32 / 255.0;
             let g = p[1] as f32 / 255.0;
             let b = p[2] as f32 / 255.0;
             let luma = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-            Rgba([
-                ((luma + factor * (r - luma)).clamp(0.0, 1.0) * 255.0) as u8,
-                ((luma + factor * (g - luma)).clamp(0.0, 1.0) * 255.0) as u8,
-                ((luma + factor * (b - luma)).clamp(0.0, 1.0) * 255.0) as u8,
-                p[3],
-            ])
+            p[0] = ((luma + factor * (r - luma)).clamp(0.0, 1.0) * 255.0) as u8;
+            p[1] = ((luma + factor * (g - luma)).clamp(0.0, 1.0) * 255.0) as u8;
+            p[2] = ((luma + factor * (b - luma)).clamp(0.0, 1.0) * 255.0) as u8;
         });
-        Ok(Arc::new(DynamicImage::ImageRgba8(result)))
+
+        Ok(Arc::new(DynamicImage::ImageRgba8(
+            ImageBuffer::from_raw(w, h, raw).unwrap(),
+        )))
     }
 }
 
@@ -99,15 +109,21 @@ impl NodeExecutor for HueShiftNode {
             return Ok(input);
         }
         let rgba = input.to_rgba8();
+        let (w, h) = (rgba.width(), rgba.height());
         let shift = self.degrees / 360.0;
-        let result = ImageBuffer::from_fn(rgba.width(), rgba.height(), |x, y| {
-            let p = rgba.get_pixel(x, y);
+
+        let mut raw = rgba.into_raw();
+        raw.par_chunks_exact_mut(4).for_each(|p| {
             let (h, s, v) = rgb_to_hsv(p[0], p[1], p[2]);
-            let h2 = (h + shift).rem_euclid(1.0);
-            let (r, g, b) = hsv_to_rgb(h2, s, v);
-            Rgba([r, g, b, p[3]])
+            let (r, g, b) = hsv_to_rgb((h + shift).rem_euclid(1.0), s, v);
+            p[0] = r;
+            p[1] = g;
+            p[2] = b;
         });
-        Ok(Arc::new(DynamicImage::ImageRgba8(result)))
+
+        Ok(Arc::new(DynamicImage::ImageRgba8(
+            ImageBuffer::from_raw(w, h, raw).unwrap(),
+        )))
     }
 }
 
@@ -163,26 +179,28 @@ impl NodeExecutor for InvertNode {
             return Ok(input);
         }
         let rgba = input.to_rgba8();
-        let result = ImageBuffer::from_fn(rgba.width(), rgba.height(), |x, y| {
-            let p = rgba.get_pixel(x, y);
-            Rgba([
-                ((255 - p[0]) as f32 * amount + p[0] as f32 * (1.0 - amount)).clamp(0.0, 255.0)
-                    as u8,
-                ((255 - p[1]) as f32 * amount + p[1] as f32 * (1.0 - amount)).clamp(0.0, 255.0)
-                    as u8,
-                ((255 - p[2]) as f32 * amount + p[2] as f32 * (1.0 - amount)).clamp(0.0, 255.0)
-                    as u8,
-                p[3],
-            ])
+        let (w, h) = (rgba.width(), rgba.height());
+
+        let mut raw = rgba.into_raw();
+        raw.par_chunks_exact_mut(4).for_each(|p| {
+            let blend = |v: u8| -> u8 {
+                ((255 - v) as f32 * amount + v as f32 * (1.0 - amount)).clamp(0.0, 255.0) as u8
+            };
+            p[0] = blend(p[0]);
+            p[1] = blend(p[1]);
+            p[2] = blend(p[2]);
         });
-        Ok(Arc::new(DynamicImage::ImageRgba8(result)))
+
+        Ok(Arc::new(DynamicImage::ImageRgba8(
+            ImageBuffer::from_raw(w, h, raw).unwrap(),
+        )))
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use image::DynamicImage;
+    use image::{DynamicImage, Rgba};
 
     #[test]
     fn test_grayscale_full_amount() {

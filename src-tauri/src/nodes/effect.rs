@@ -1,5 +1,6 @@
 use super::NodeExecutor;
-use image::{DynamicImage, ImageBuffer, Rgba};
+use image::{DynamicImage, ImageBuffer};
+use rayon::prelude::*;
 use std::sync::Arc;
 
 // --- Vignette ---
@@ -22,20 +23,23 @@ impl NodeExecutor for VignetteNode {
         let max_dist = (cx * cx + cy * cy).sqrt();
         let strength = (self.amount / 100.0).clamp(0.0, 1.0);
         let softness = (self.softness / 100.0).clamp(0.01, 1.0);
+        let wu = w as usize;
 
-        let result = ImageBuffer::from_fn(w, h, |x, y| {
-            let pixel = rgba.get_pixel(x, y);
-            let dx = x as f32 - cx;
-            let dy = y as f32 - cy;
-            let dist = (dx * dx + dy * dy).sqrt() / max_dist;
-            let vignette = 1.0 - (dist / softness).min(1.0) * strength;
-            Rgba([
-                (pixel[0] as f32 * vignette).clamp(0.0, 255.0) as u8,
-                (pixel[1] as f32 * vignette).clamp(0.0, 255.0) as u8,
-                (pixel[2] as f32 * vignette).clamp(0.0, 255.0) as u8,
-                pixel[3],
-            ])
-        });
-        Ok(Arc::new(DynamicImage::ImageRgba8(result)))
+        let mut raw = rgba.into_raw();
+        raw.par_chunks_exact_mut(4)
+            .enumerate()
+            .for_each(|(i, p)| {
+                let dx = (i % wu) as f32 - cx;
+                let dy = (i / wu) as f32 - cy;
+                let dist = (dx * dx + dy * dy).sqrt() / max_dist;
+                let vignette = 1.0 - (dist / softness).min(1.0) * strength;
+                p[0] = (p[0] as f32 * vignette).clamp(0.0, 255.0) as u8;
+                p[1] = (p[1] as f32 * vignette).clamp(0.0, 255.0) as u8;
+                p[2] = (p[2] as f32 * vignette).clamp(0.0, 255.0) as u8;
+            });
+
+        Ok(Arc::new(DynamicImage::ImageRgba8(
+            ImageBuffer::from_raw(w, h, raw).unwrap(),
+        )))
     }
 }

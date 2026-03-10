@@ -52,13 +52,13 @@ pub fn execute(
 ) -> Result<Arc<DynamicImage>, String> {
     let source = if preview {
         let (w, h) = (source_image.width(), source_image.height());
-        let max = 800u32;
+        let max = 512u32;
         if w > max || h > max {
             let scale = max as f32 / w.max(h) as f32;
             Arc::new(source_image.resize(
                 (w as f32 * scale) as u32,
                 (h as f32 * scale) as u32,
-                image::imageops::FilterType::Triangle,
+                image::imageops::FilterType::Nearest,
             ))
         } else {
             source_image

@@ -15,6 +15,7 @@ image = { version = "0.25", features = ["jpeg", "png", "webp"] }
 imageproc = "0.25"
 fast_image_resize = "4"
 base64 = "0.22"
+rayon = "1"
 # Pin time to last version with MSRV <= 1.86.0 (0.3.47+ requires 1.88.0)
 time = "=0.3.36"
 

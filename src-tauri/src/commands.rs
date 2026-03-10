@@ -29,9 +29,15 @@ pub async fn execute_graph(
     let result = executor::execute(&payload.graph, source, payload.preview)?;
     let (w, h) = (result.width(), result.height());
 
-    let mut buf = Cursor::new(Vec::new());
-    result
-        .write_to(&mut buf, image::ImageFormat::Jpeg)
+    let mut buf = Cursor::new(Vec::<u8>::new());
+    let rgb = result.to_rgb8();
+    image::codecs::jpeg::JpegEncoder::new_with_quality(&mut buf, 70)
+        .encode(
+            rgb.as_raw(),
+            rgb.width(),
+            rgb.height(),
+            image::ExtendedColorType::Rgb8,
+        )
         .map_err(|e| e.to_string())?;
     let b64 = general_purpose::STANDARD.encode(buf.into_inner());
 
