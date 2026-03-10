@@ -11,6 +11,7 @@ const PARAM_HEIGHT = 50
 const PORT_INSET = 18
 const BODY_PADDING = 12
 const SPECIAL_CONTENT_HEIGHT = 64
+const INPUT_PORT_ROW_HEIGHT = 32
 
 interface ConnectionLinesProps {
   tempConnection: {
@@ -29,16 +30,19 @@ function getOutputPort(node: NodeData) {
   }
 }
 
-function getInputPort(node: NodeData) {
+function getInputPort(node: NodeData, portId: string) {
   const paramCount = Object.keys(node.params).length
   const hasSpecialContent = node.type === 'output' || node.type === 'image-input'
+  const inputCount = Math.max(1, node.inputs.length)
   const bodyHeight =
     paramCount * PARAM_HEIGHT +
     (hasSpecialContent ? SPECIAL_CONTENT_HEIGHT : 0) +
+    (inputCount - 1) * INPUT_PORT_ROW_HEIGHT +
     BODY_PADDING * 2
+  const portIndex = Math.max(0, node.inputs.findIndex(p => p.id === portId))
   return {
     x: node.x + PORT_INSET,
-    y: node.y + HEADER_HEIGHT + bodyHeight - 20,
+    y: node.y + HEADER_HEIGHT + bodyHeight - 20 - (inputCount - 1 - portIndex) * INPUT_PORT_ROW_HEIGHT,
   }
 }
 
@@ -66,7 +70,7 @@ export function ConnectionLines({ tempConnection, hoveredConnectionId }: Connect
       const toNode = nodeMap.get(conn.toNodeId)
       if (!fromNode || !toNode) return null
       const fromPos = getOutputPort(fromNode)
-      const toPos = getInputPort(toNode)
+      const toPos = getInputPort(toNode, conn.toPortId)
       return { id: conn.id, fromX: fromPos.x, fromY: fromPos.y, toX: toPos.x, toY: toPos.y }
     }).filter(Boolean)
   }, [connections, nodes])

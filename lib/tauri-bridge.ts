@@ -16,6 +16,12 @@ export async function loadImage(path: string): Promise<void> {
   return invoke('load_image', { path })
 }
 
+export async function loadNodeImage(nodeId: string, path: string): Promise<{ thumbnail_b64: string }> {
+  if (!isTauri()) throw new Error('Not running in Tauri')
+  const { invoke } = await import('@tauri-apps/api/core')
+  return invoke('load_node_image', { nodeId, path })
+}
+
 export async function executeGraph(
   graph: Graph,
   preview = true

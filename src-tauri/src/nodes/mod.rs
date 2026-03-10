@@ -9,3 +9,4 @@ pub mod color;
 pub mod effect;
 pub mod filter;
 pub mod input;
+pub mod blend;

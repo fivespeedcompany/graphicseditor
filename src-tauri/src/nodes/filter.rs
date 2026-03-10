@@ -1,5 +1,5 @@
 use super::NodeExecutor;
-use image::{DynamicImage, ImageBuffer};
+use image::{DynamicImage, ImageBuffer, Rgba};
 use rayon::prelude::*;
 use std::sync::Arc;
 
@@ -95,7 +95,7 @@ impl NodeExecutor for NoiseNode {
 }
 
 /// Simple deterministic per-pixel noise in [-1, 1].
-fn pseudo_noise(x: u32, y: u32) -> f32 {
+pub fn pseudo_noise(x: u32, y: u32) -> f32 {
     let mut n = x
         .wrapping_mul(2246822519)
         .wrapping_add(y.wrapping_mul(2654435761))
@@ -104,4 +104,94 @@ fn pseudo_noise(x: u32, y: u32) -> f32 {
     n = n.wrapping_mul(1664525).wrapping_add(1013904223);
     n ^= n >> 16;
     (n as f32 / u32::MAX as f32) * 2.0 - 1.0
+}
+
+// --- Transform (rotate + scale) ---
+
+pub struct TransformNode {
+    pub rotate: f32,
+    pub scale: f32,
+}
+
+impl NodeExecutor for TransformNode {
+    fn execute(&self, inputs: Vec<Arc<DynamicImage>>) -> Result<Arc<DynamicImage>, String> {
+        let input = inputs.into_iter().next().ok_or("No input")?;
+        let rgba = input.to_rgba8();
+        let (w, h) = (rgba.width(), rgba.height());
+
+        // Rotate
+        let rotated = if self.rotate != 0.0 {
+            let angle = self.rotate * std::f32::consts::PI / 180.0;
+            imageproc::geometric_transformations::rotate_about_center(
+                &rgba,
+                angle,
+                imageproc::geometric_transformations::Interpolation::Bilinear,
+                Rgba([0, 0, 0, 0]),
+            )
+        } else {
+            rgba
+        };
+
+        // Scale — resize then center-crop/pad back to original dims
+        let scale = (self.scale / 100.0).max(0.01);
+        let new_w = ((w as f32 * scale) as u32).max(1);
+        let new_h = ((h as f32 * scale) as u32).max(1);
+
+        let scaled = image::imageops::resize(
+            &rotated,
+            new_w,
+            new_h,
+            image::imageops::FilterType::Triangle,
+        );
+
+        // Paste scaled image centered onto a blank canvas of original size
+        let mut canvas = ImageBuffer::from_pixel(w, h, Rgba([0, 0, 0, 255]));
+        let ox = (w as i32 - new_w as i32) / 2;
+        let oy = (h as i32 - new_h as i32) / 2;
+        image::imageops::overlay(&mut canvas, &scaled, ox as i64, oy as i64);
+
+        Ok(Arc::new(DynamicImage::ImageRgba8(canvas)))
+    }
+}
+
+// --- Displace ---
+
+pub struct DisplaceNode {
+    pub amount: f32,
+    pub freq: f32,
+}
+
+impl NodeExecutor for DisplaceNode {
+    fn execute(&self, inputs: Vec<Arc<DynamicImage>>) -> Result<Arc<DynamicImage>, String> {
+        let input = inputs.into_iter().next().ok_or("No input")?;
+        let rgba = input.to_rgba8();
+        let (w, h) = (rgba.width(), rgba.height());
+        let wu = w as usize;
+        let hu = h as usize;
+        let displacement = self.amount;
+        let freq = self.freq.max(0.01);
+
+        let src = rgba.into_raw();
+        let mut dst = vec![0u8; wu * hu * 4];
+
+        dst.par_chunks_exact_mut(4)
+            .enumerate()
+            .for_each(|(i, out)| {
+                let x = (i % wu) as f32;
+                let y = (i / wu) as f32;
+                // Quantize to noise frequency grid
+                let qx = (x / freq) as u32;
+                let qy = (y / freq) as u32;
+                let dx = pseudo_noise(qx, qy) * displacement;
+                let dy = pseudo_noise(qx.wrapping_add(9973), qy.wrapping_add(9973)) * displacement;
+                let sx = (x + dx).clamp(0.0, (wu - 1) as f32) as usize;
+                let sy = (y + dy).clamp(0.0, (hu - 1) as f32) as usize;
+                let si = (sy * wu + sx) * 4;
+                out.copy_from_slice(&src[si..si + 4]);
+            });
+
+        Ok(Arc::new(DynamicImage::ImageRgba8(
+            ImageBuffer::from_raw(w, h, dst).unwrap(),
+        )))
+    }
 }

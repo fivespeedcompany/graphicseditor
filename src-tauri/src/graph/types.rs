@@ -23,6 +23,17 @@ pub enum NodeKind {
     Sharpen { amount: f32 },
     Noise { amount: f32 },
     Vignette { amount: f32, softness: f32 },
+    Levels { input_black: f32, input_white: f32, gamma: f32 },
+    Curves { shadows: f32, midtones: f32, highlights: f32 },
+    GradientMap { hue_a: f32, hue_b: f32, saturation: f32 },
+    Transform { rotate: f32, scale: f32 },
+    MixBlend { opacity: f32, mode: f32 },
+    Mask { invert: f32 },
+    Pixelate { size: f32 },
+    Dither { levels: f32, strength: f32 },
+    NoiseTexture { freq: f32, octaves: f32, intensity: f32 },
+    Displace { amount: f32, freq: f32 },
+    ImageNode,
     Output,
 }
 

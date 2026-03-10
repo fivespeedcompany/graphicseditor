@@ -197,6 +197,116 @@ impl NodeExecutor for InvertNode {
     }
 }
 
+// --- Levels ---
+
+pub struct LevelsNode {
+    pub input_black: f32,
+    pub input_white: f32,
+    pub gamma: f32,
+}
+
+impl NodeExecutor for LevelsNode {
+    fn execute(&self, inputs: Vec<Arc<DynamicImage>>) -> Result<Arc<DynamicImage>, String> {
+        let input = inputs.into_iter().next().ok_or("No input")?;
+        let rgba = input.to_rgba8();
+        let (w, h) = (rgba.width(), rgba.height());
+
+        let black = self.input_black / 100.0 * 255.0;
+        let white = (self.input_white / 100.0 * 255.0).max(black + 1.0);
+        let gamma = (self.gamma / 10.0).max(0.1);
+
+        let lut: Vec<u8> = (0u32..256).map(|i| {
+            let normalized = ((i as f32 - black) / (white - black)).clamp(0.0, 1.0);
+            (normalized.powf(1.0 / gamma) * 255.0) as u8
+        }).collect();
+
+        let mut raw = rgba.into_raw();
+        raw.par_chunks_exact_mut(4).for_each(|p| {
+            p[0] = lut[p[0] as usize];
+            p[1] = lut[p[1] as usize];
+            p[2] = lut[p[2] as usize];
+        });
+
+        Ok(Arc::new(DynamicImage::ImageRgba8(
+            ImageBuffer::from_raw(w, h, raw).unwrap(),
+        )))
+    }
+}
+
+// --- Curves ---
+
+pub struct CurvesNode {
+    pub shadows: f32,
+    pub midtones: f32,
+    pub highlights: f32,
+}
+
+impl NodeExecutor for CurvesNode {
+    fn execute(&self, inputs: Vec<Arc<DynamicImage>>) -> Result<Arc<DynamicImage>, String> {
+        let input = inputs.into_iter().next().ok_or("No input")?;
+        let rgba = input.to_rgba8();
+        let (w, h) = (rgba.width(), rgba.height());
+
+        let s = self.shadows / 100.0 * 128.0;
+        let m = self.midtones / 100.0 * 64.0;
+        let hi = self.highlights / 100.0 * 128.0;
+
+        let lut: Vec<u8> = (0u32..256).map(|i| {
+            let t = i as f32 / 255.0;
+            let shadow_w = (1.0 - t * 2.0).max(0.0).powi(2);
+            let mid_w = (4.0 * t * (1.0 - t)).max(0.0);
+            let high_w = ((t * 2.0 - 1.0).max(0.0)).powi(2);
+            let adj = s * shadow_w + m * mid_w + hi * high_w;
+            (i as f32 + adj).clamp(0.0, 255.0) as u8
+        }).collect();
+
+        let mut raw = rgba.into_raw();
+        raw.par_chunks_exact_mut(4).for_each(|p| {
+            p[0] = lut[p[0] as usize];
+            p[1] = lut[p[1] as usize];
+            p[2] = lut[p[2] as usize];
+        });
+
+        Ok(Arc::new(DynamicImage::ImageRgba8(
+            ImageBuffer::from_raw(w, h, raw).unwrap(),
+        )))
+    }
+}
+
+// --- GradientMap ---
+
+pub struct GradientMapNode {
+    pub hue_a: f32,
+    pub hue_b: f32,
+    pub saturation: f32,
+}
+
+impl NodeExecutor for GradientMapNode {
+    fn execute(&self, inputs: Vec<Arc<DynamicImage>>) -> Result<Arc<DynamicImage>, String> {
+        let input = inputs.into_iter().next().ok_or("No input")?;
+        let rgba = input.to_rgba8();
+        let (w, h) = (rgba.width(), rgba.height());
+
+        let ha = self.hue_a / 360.0;
+        let hb = self.hue_b / 360.0;
+        let sat = (self.saturation / 100.0).clamp(0.0, 1.0);
+
+        let mut raw = rgba.into_raw();
+        raw.par_chunks_exact_mut(4).for_each(|p| {
+            let luma = (0.2126 * p[0] as f32 + 0.7152 * p[1] as f32 + 0.0722 * p[2] as f32) / 255.0;
+            let hue = (ha + (hb - ha) * luma).rem_euclid(1.0);
+            let (r, g, b) = hsv_to_rgb(hue, sat, luma.max(0.04));
+            p[0] = r;
+            p[1] = g;
+            p[2] = b;
+        });
+
+        Ok(Arc::new(DynamicImage::ImageRgba8(
+            ImageBuffer::from_raw(w, h, raw).unwrap(),
+        )))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

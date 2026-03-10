@@ -3,9 +3,9 @@
 import { useRef, useCallback, useState } from 'react'
 import { NodeData } from '@/lib/node-types'
 import { useNodeStore } from '@/lib/node-store'
-import { loadImage, openImageDialog } from '@/lib/tauri-bridge'
+import { loadImage, loadNodeImage, openImageDialog } from '@/lib/tauri-bridge'
 import { cn } from '@/lib/utils'
-import { X, Image, Sun, Droplets, Palette, RotateCcw, Circle, Sparkles, Volume2, Target, Upload } from 'lucide-react'
+import { X, Image, Sun, Droplets, Palette, RotateCcw, Circle, Sparkles, Volume2, Target, Upload, BarChart2, TrendingUp, Paintbrush, Move, Layers, Crop, LayoutGrid, Hash, Zap, Wind } from 'lucide-react'
 
 interface GlassNodeProps {
   node: NodeData
@@ -20,6 +20,7 @@ interface GlassNodeProps {
 
 const nodeIcons: Record<string, React.ReactNode> = {
   'image-input': <Image className="w-3.5 h-3.5" />,
+  'image-node': <Image className="w-3.5 h-3.5" />,
   'brightness-contrast': <Sun className="w-3.5 h-3.5" />,
   'blur': <Circle className="w-3.5 h-3.5" />,
   'saturation': <Droplets className="w-3.5 h-3.5" />,
@@ -29,7 +30,40 @@ const nodeIcons: Record<string, React.ReactNode> = {
   'sharpen': <Sparkles className="w-3.5 h-3.5" />,
   'noise': <Volume2 className="w-3.5 h-3.5" />,
   'vignette': <Target className="w-3.5 h-3.5" />,
+  'levels': <BarChart2 className="w-3.5 h-3.5" />,
+  'curves': <TrendingUp className="w-3.5 h-3.5" />,
+  'gradient-map': <Paintbrush className="w-3.5 h-3.5" />,
+  'transform': <Move className="w-3.5 h-3.5" />,
+  'mix-blend': <Layers className="w-3.5 h-3.5" />,
+  'mask': <Crop className="w-3.5 h-3.5" />,
+  'pixelate': <LayoutGrid className="w-3.5 h-3.5" />,
+  'dither': <Hash className="w-3.5 h-3.5" />,
+  'noise-texture': <Zap className="w-3.5 h-3.5" />,
+  'displace': <Wind className="w-3.5 h-3.5" />,
   'output': <Image className="w-3.5 h-3.5" />,
+}
+
+const PARAM_RANGES: Record<string, [number, number]> = {
+  brightness:   [-100, 100],
+  contrast:     [-100, 100],
+  degrees:      [-180, 180],
+  radius:       [0, 20],
+  shadows:      [-100, 100],
+  midtones:     [-100, 100],
+  highlights:   [-100, 100],
+  input_black:  [0, 100],
+  input_white:  [0, 100],
+  gamma:        [1, 30],
+  hue_a:        [0, 360],
+  hue_b:        [0, 360],
+  rotate:       [-180, 180],
+  scale:        [10, 200],
+  size:         [1, 50],
+  levels:       [2, 16],
+  freq:         [1, 100],
+  octaves:      [1, 8],
+  intensity:    [0, 100],
+  mode:         [0, 4],
 }
 
 export function GlassNode({
@@ -50,6 +84,8 @@ export function GlassNode({
     selectedNodeId,
     setImageLoaded,
     setBackgroundImage,
+    nodeImages,
+    setNodeImage,
   } = useNodeStore()
   const nodeRef = useRef<HTMLDivElement>(null)
   const [isDragging, setIsDragging] = useState(false)
@@ -128,6 +164,18 @@ export function GlassNode({
     }
   }, [setImageLoaded, setBackgroundImage])
 
+  const handleNodeImageUpload = useCallback(async (e: React.MouseEvent) => {
+    e.stopPropagation()
+    const path = await openImageDialog()
+    if (!path) return
+    try {
+      const result = await loadNodeImage(node.id, path)
+      setNodeImage(node.id, result.thumbnail_b64)
+    } catch (err) {
+      console.error('Failed to load node image:', err)
+    }
+  }, [node.id, setNodeImage])
+
   return (
     <div
       data-node
@@ -184,68 +232,134 @@ export function GlassNode({
       {/* Body */}
       <div className="p-3 space-y-3">
         {/* Parameters */}
-        {Object.entries(node.params).map(([key, value]) => (
-          <div key={key} className="space-y-1.5">
-            <div className="flex items-center justify-between">
-              <label className="text-[10px] uppercase tracking-wider text-white/40">
-                {key.replace(/-/g, ' ')}
-              </label>
-              <span className="text-[10px] font-mono text-white/60">
-                {typeof value === 'number' ? value.toFixed(0) : value}
-              </span>
-            </div>
-            <div className="relative h-5 flex items-center group">
-              <div className="absolute inset-0 flex items-center">
-                <div className="w-full h-[3px] rounded-full bg-white/[0.07]" />
+        {Object.entries(node.params).map(([key, value]) => {
+          // Blend mode: dropdown instead of slider
+          if (key === 'mode' && node.type === 'mix-blend') {
+            const BLEND_MODES = [
+              { value: 0, label: 'Normal' },
+              { value: 1, label: 'Multiply' },
+              { value: 2, label: 'Screen' },
+              { value: 3, label: 'Overlay' },
+              { value: 4, label: 'Difference' },
+            ]
+            return (
+              <div key={key} className="space-y-1.5">
+                <label className="text-[10px] uppercase tracking-wider text-white/40">
+                  Mode
+                </label>
+                <div className="relative">
+                  <select
+                    value={value}
+                    onChange={(e) => handleParamChange(key, parseInt(e.target.value))}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    className="w-full appearance-none bg-white/5 border border-white/10 rounded-lg text-[11px] text-white/75 px-2.5 py-1.5 pr-7 cursor-pointer focus:outline-none focus:border-white/25 transition-colors"
+                    style={{ colorScheme: 'dark' }}
+                  >
+                    {BLEND_MODES.map(m => (
+                      <option key={m.value} value={m.value}>{m.label}</option>
+                    ))}
+                  </select>
+                  <div className="pointer-events-none absolute inset-y-0 right-2 flex items-center">
+                    <svg className="w-3 h-3 text-white/30" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </div>
+                </div>
               </div>
-              <input
-                type="range"
-                min={key === 'degrees' ? -180 : key === 'brightness' || key === 'contrast' ? -100 : 0}
-                max={key === 'degrees' ? 180 : key === 'radius' ? 20 : key === 'brightness' || key === 'contrast' ? 100 : 100}
-                value={value}
-                onChange={(e) => handleParamChange(key, parseFloat(e.target.value))}
-                className="relative w-full h-[3px] appearance-none bg-transparent rounded-full cursor-pointer z-10
-                  [&::-webkit-slider-thumb]:appearance-none
-                  [&::-webkit-slider-thumb]:w-2.5
-                  [&::-webkit-slider-thumb]:h-2.5
-                  [&::-webkit-slider-thumb]:rounded-full
-                  [&::-webkit-slider-thumb]:bg-white
-                  [&::-webkit-slider-thumb]:shadow-[0_0_8px_rgba(255,255,255,0.3)]
-                  [&::-webkit-slider-thumb]:cursor-pointer
-                  [&::-webkit-slider-thumb]:transition-all
-                  [&::-webkit-slider-thumb]:duration-150
-                  [&::-webkit-slider-thumb]:hover:scale-150
-                  [&::-webkit-slider-thumb]:hover:shadow-[0_0_12px_rgba(255,255,255,0.5)]
-                  [&::-moz-range-thumb]:w-2.5
-                  [&::-moz-range-thumb]:h-2.5
-                  [&::-moz-range-thumb]:rounded-full
-                  [&::-moz-range-thumb]:bg-white
-                  [&::-moz-range-thumb]:shadow-[0_0_8px_rgba(255,255,255,0.3)]
-                  [&::-moz-range-thumb]:border-0
-                  [&::-moz-range-thumb]:cursor-pointer
-                  [&::-moz-range-track]:bg-transparent"
-              />
-            </div>
-          </div>
-        ))}
+            )
+          }
 
-        {/* Input port at bottom */}
-        {node.inputs.length > 0 && (
-          <div className="flex items-center gap-2.5 pt-2 border-t border-white/5 mt-1">
+          // Default: slider
+          return (
+            <div key={key} className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <label className="text-[10px] uppercase tracking-wider text-white/40">
+                  {key.replace(/_/g, ' ')}
+                </label>
+                <span className="text-[10px] font-mono text-white/60">
+                  {typeof value === 'number' ? value.toFixed(0) : value}
+                </span>
+              </div>
+              <div className="relative h-5 flex items-center group">
+                <div className="absolute inset-0 flex items-center">
+                  <div className="w-full h-[3px] rounded-full bg-white/[0.07]" />
+                </div>
+                <input
+                  type="range"
+                  min={PARAM_RANGES[key]?.[0] ?? 0}
+                  max={PARAM_RANGES[key]?.[1] ?? 100}
+                  value={value}
+                  onChange={(e) => handleParamChange(key, parseFloat(e.target.value))}
+                  className="relative w-full h-[3px] appearance-none bg-transparent rounded-full cursor-pointer z-10
+                    [&::-webkit-slider-thumb]:appearance-none
+                    [&::-webkit-slider-thumb]:w-2.5
+                    [&::-webkit-slider-thumb]:h-2.5
+                    [&::-webkit-slider-thumb]:rounded-full
+                    [&::-webkit-slider-thumb]:bg-white
+                    [&::-webkit-slider-thumb]:shadow-[0_0_8px_rgba(255,255,255,0.3)]
+                    [&::-webkit-slider-thumb]:cursor-pointer
+                    [&::-webkit-slider-thumb]:transition-all
+                    [&::-webkit-slider-thumb]:duration-150
+                    [&::-webkit-slider-thumb]:hover:scale-150
+                    [&::-webkit-slider-thumb]:hover:shadow-[0_0_12px_rgba(255,255,255,0.5)]
+                    [&::-moz-range-thumb]:w-2.5
+                    [&::-moz-range-thumb]:h-2.5
+                    [&::-moz-range-thumb]:rounded-full
+                    [&::-moz-range-thumb]:bg-white
+                    [&::-moz-range-thumb]:shadow-[0_0_8px_rgba(255,255,255,0.3)]
+                    [&::-moz-range-thumb]:border-0
+                    [&::-moz-range-thumb]:cursor-pointer
+                    [&::-moz-range-track]:bg-transparent"
+                />
+              </div>
+            </div>
+          )
+        })}
+
+        {/* Input ports at bottom — one row per port (supports dual-input nodes) */}
+        {node.inputs.map((port) => (
+          <div key={port.id} className="flex items-center gap-2.5 pt-2 border-t border-white/5 mt-1">
             <div
               data-port-node={node.id}
+              data-port-id={port.id}
               data-port-type="input"
               className="port w-3.5 h-3.5 rounded-full border-[1.5px] border-white/50 bg-white/5 hover:border-white hover:bg-white/30 hover:scale-125 cursor-crosshair transition-all duration-200"
               onMouseDown={(e) => {
                 e.stopPropagation()
-                onStartConnection(node.id, node.inputs[0].id, 'input', e)
+                onStartConnection(node.id, port.id, 'input', e)
               }}
-              onMouseUp={() => onEndConnection(node.id, node.inputs[0].id)}
+              onMouseUp={() => onEndConnection(node.id, port.id)}
             />
             <span className="text-[10px] text-white/40 uppercase tracking-wider">
-              {node.inputs[0].label}
+              {port.label}
             </span>
           </div>
+        ))}
+
+        {/* Image Node special content */}
+        {node.type === 'image-node' && (
+          <button
+            onClick={handleNodeImageUpload}
+            className="w-full overflow-hidden rounded-lg border border-dashed border-white/10 hover:border-white/25 transition-all duration-150 cursor-pointer group"
+          >
+            {nodeImages[node.id] ? (
+              <div className="relative h-20">
+                <img
+                  src={nodeImages[node.id]}
+                  alt="Node image"
+                  className="w-full h-full object-cover"
+                />
+                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-all duration-150 flex items-center justify-center">
+                  <Upload className="w-4 h-4 text-white opacity-0 group-hover:opacity-100 transition-opacity duration-150" />
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-col items-center justify-center gap-1.5 h-14 bg-white/5 hover:bg-white/10 transition-all duration-150">
+                <Upload className="w-3.5 h-3.5 text-white/40" />
+                <span className="text-[10px] text-white/40">Upload Image</span>
+              </div>
+            )}
+          </button>
         )}
 
         {/* Image Input special content */}

@@ -7,6 +7,7 @@ interface NodeStore {
   selectedNodeId: string | null
   backgroundImage: string | null
   imageLoaded: boolean
+  nodeImages: Record<string, string>
 
   addNode: (type: NodeType, x: number, y: number) => string
   removeNode: (id: string) => void
@@ -21,6 +22,7 @@ interface NodeStore {
 
   setBackgroundImage: (url: string | null) => void
   setImageLoaded: (loaded: boolean) => void
+  setNodeImage: (nodeId: string, url: string) => void
 }
 
 let nodeIdCounter = 0
@@ -50,6 +52,7 @@ export const useNodeStore = create<NodeStore>((set, get) => ({
   selectedNodeId: null,
   backgroundImage: null,
   imageLoaded: false,
+  nodeImages: {},
 
   addNode: (type, x, y) => {
     const definition = NODE_DEFINITIONS[type]
@@ -178,7 +181,7 @@ export const useNodeStore = create<NodeStore>((set, get) => ({
         fromNodeId: fromNode.id,
         fromPortId: connectionIntoOutput.fromPortId,
         toNodeId: newId,
-        toPortId: 'in',
+        toPortId: definition.inputs[0]?.id ?? 'in',
       }
       const newConn2: Connection = {
         id: `conn-${Date.now() + 1}`,
@@ -211,7 +214,7 @@ export const useNodeStore = create<NodeStore>((set, get) => ({
       fromNodeId: conn.fromNodeId,
       fromPortId: conn.fromPortId,
       toNodeId: nodeId,
-      toPortId: 'in',
+      toPortId: get().nodes.find(n => n.id === nodeId)?.inputs[0]?.id ?? 'in',
     }
     const newConn2: Connection = {
       id: `conn-${Date.now() + 1}`,
@@ -235,5 +238,9 @@ export const useNodeStore = create<NodeStore>((set, get) => ({
 
   setImageLoaded: (loaded) => {
     set({ imageLoaded: loaded })
+  },
+
+  setNodeImage: (nodeId, url) => {
+    set(state => ({ nodeImages: { ...state.nodeImages, [nodeId]: url } }))
   },
 }))

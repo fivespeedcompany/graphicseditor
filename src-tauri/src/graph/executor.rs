@@ -1,10 +1,10 @@
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
-use image::DynamicImage;
+use image::{DynamicImage, ImageBuffer, Rgba};
 
 use crate::graph::types::*;
 use crate::nodes::NodeExecutor;
-use crate::nodes::{color, effect, filter};
+use crate::nodes::{blend, color, effect, filter};
 
 pub fn topo_sort(graph: &Graph) -> Result<Vec<NodeId>, String> {
     let mut in_degree: HashMap<NodeId, usize> = HashMap::new();
@@ -48,6 +48,7 @@ pub fn topo_sort(graph: &Graph) -> Result<Vec<NodeId>, String> {
 pub fn execute(
     graph: &Graph,
     source_image: Arc<DynamicImage>,
+    node_images: &HashMap<String, Arc<DynamicImage>>,
     preview: bool,
 ) -> Result<Arc<DynamicImage>, String> {
     let source = if preview {
@@ -90,6 +91,18 @@ pub fn execute(
 
         let result: Arc<DynamicImage> = match &node.kind {
             NodeKind::ImageInput => source.clone(),
+            NodeKind::ImageNode => {
+                match node_images.get(id) {
+                    Some(img) => img.clone(),
+                    None => {
+                        // No image loaded yet — return a transparent canvas matching source dims
+                        let (w, h) = (source.width(), source.height());
+                        Arc::new(DynamicImage::ImageRgba8(
+                            ImageBuffer::from_pixel(w, h, Rgba([0, 0, 0, 0]))
+                        ))
+                    }
+                }
+            }
             NodeKind::Output => {
                 inputs.into_iter().next().ok_or("Output node has no input")?
             }
@@ -143,8 +156,38 @@ fn make_executor(kind: &NodeKind) -> Result<Box<dyn NodeExecutor>, String> {
             amount: *amount,
             softness: *softness,
         }),
-        NodeKind::ImageInput | NodeKind::Output => {
-            return Err("ImageInput/Output should not reach make_executor".into())
+        NodeKind::Levels { input_black, input_white, gamma } => Box::new(
+            color::LevelsNode { input_black: *input_black, input_white: *input_white, gamma: *gamma }
+        ),
+        NodeKind::Curves { shadows, midtones, highlights } => Box::new(
+            color::CurvesNode { shadows: *shadows, midtones: *midtones, highlights: *highlights }
+        ),
+        NodeKind::GradientMap { hue_a, hue_b, saturation } => Box::new(
+            color::GradientMapNode { hue_a: *hue_a, hue_b: *hue_b, saturation: *saturation }
+        ),
+        NodeKind::Transform { rotate, scale } => Box::new(
+            filter::TransformNode { rotate: *rotate, scale: *scale }
+        ),
+        NodeKind::MixBlend { opacity, mode } => Box::new(
+            blend::MixBlendNode { opacity: *opacity, mode: *mode }
+        ),
+        NodeKind::Mask { invert } => Box::new(
+            blend::MaskNode { invert: *invert }
+        ),
+        NodeKind::Pixelate { size } => Box::new(
+            effect::PixelateNode { size: *size }
+        ),
+        NodeKind::Dither { levels, strength } => Box::new(
+            effect::DitherNode { levels: *levels, strength: *strength }
+        ),
+        NodeKind::NoiseTexture { freq, octaves, intensity } => Box::new(
+            effect::NoiseTextureNode { freq: *freq, octaves: *octaves, intensity: *intensity }
+        ),
+        NodeKind::Displace { amount, freq } => Box::new(
+            filter::DisplaceNode { amount: *amount, freq: *freq }
+        ),
+        NodeKind::ImageInput | NodeKind::ImageNode | NodeKind::Output => {
+            return Err("ImageInput/ImageNode/Output should not reach make_executor".into())
         }
     })
 }

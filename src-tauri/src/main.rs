@@ -13,6 +13,7 @@ fn main() {
         .manage(AppState::new())
         .invoke_handler(tauri::generate_handler![
             commands::load_image,
+            commands::load_node_image,
             commands::execute_graph,
             commands::export_image,
         ])

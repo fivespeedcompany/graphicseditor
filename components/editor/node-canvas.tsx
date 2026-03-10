@@ -30,6 +30,7 @@ const PARAM_HEIGHT = 50
 const PORT_INSET = 18
 const BODY_PADDING = 12
 const SPECIAL_CONTENT_HEIGHT = 64
+const INPUT_PORT_ROW_HEIGHT = 32
 
 function getConnectionMidpoints(
   nodes: NodeData[],
@@ -45,12 +46,15 @@ function getConnectionMidpoints(
       const fromY = fromNode.y + HEADER_HEIGHT / 2
       const paramCount = Object.keys(toNode.params).length
       const hasSpecialContent = toNode.type === 'output' || toNode.type === 'image-input'
+      const inputCount = Math.max(1, toNode.inputs.length)
       const bodyHeight =
         paramCount * PARAM_HEIGHT +
         (hasSpecialContent ? SPECIAL_CONTENT_HEIGHT : 0) +
+        (inputCount - 1) * INPUT_PORT_ROW_HEIGHT +
         BODY_PADDING * 2
+      const portIndex = Math.max(0, toNode.inputs.findIndex(p => p.id === conn.toPortId))
       const toX = toNode.x + PORT_INSET
-      const toY = toNode.y + HEADER_HEIGHT + bodyHeight - 20
+      const toY = toNode.y + HEADER_HEIGHT + bodyHeight - 20 - (inputCount - 1 - portIndex) * INPUT_PORT_ROW_HEIGHT
 
       return { id: conn.id, x: (fromX + toX) / 2, y: (fromY + toY) / 2 }
     })
@@ -58,7 +62,7 @@ function getConnectionMidpoints(
 }
 
 export function NodeCanvas() {
-  const { nodes, connections, addConnection, insertNodeBetween, backgroundImage, selectNode } =
+  const { nodes, connections, addConnection, insertNodeBetween, backgroundImage, selectNode, nodeImages } =
     useNodeStore()
   const { preview: previewImage, isProcessing } = usePreview()
   const [isPanelOpen, setIsPanelOpen] = useState(false)
@@ -322,7 +326,11 @@ export function NodeCanvas() {
             node={node}
             zoom={transform.zoom}
             isInChain={activeNodeIds.has(node.id)}
-            thumbnailSrc={node.type === 'image-input' ? previewImage : null}
+            thumbnailSrc={
+              node.type === 'image-input' ? previewImage :
+              node.type === 'image-node' ? (nodeImages[node.id] ?? null) :
+              null
+            }
             onStartConnection={handleStartConnection}
             onEndConnection={handleEndConnection}
             onDragMove={handleNodeDragMove}

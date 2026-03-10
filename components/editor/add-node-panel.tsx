@@ -3,16 +3,35 @@
 import { NodeType, NODE_DEFINITIONS } from '@/lib/node-types'
 import { useNodeStore } from '@/lib/node-store'
 import { cn } from '@/lib/utils'
-import { Plus, Sun, Circle, Droplets, Palette, RotateCcw, Sparkles, Volume2, Target, X } from 'lucide-react'
+import {
+  Plus, Sun, Circle, Droplets, Palette, RotateCcw, Sparkles, Volume2, Target, X,
+  BarChart2, TrendingUp, Paintbrush, Move, Layers, Crop, LayoutGrid, Hash, Zap, Wind, Image,
+} from 'lucide-react'
 import { useState } from 'react'
 
 const nodeCategories = [
   {
+    name: 'Source',
+    nodes: [
+      { type: 'image-node' as NodeType, icon: Image, label: 'Image' },
+    ]
+  },
+  {
     name: 'Adjustments',
     nodes: [
       { type: 'brightness-contrast' as NodeType, icon: Sun, label: 'Brightness / Contrast' },
+      { type: 'levels' as NodeType, icon: BarChart2, label: 'Levels' },
+      { type: 'curves' as NodeType, icon: TrendingUp, label: 'Curves' },
       { type: 'saturation' as NodeType, icon: Droplets, label: 'Saturation' },
       { type: 'hue-shift' as NodeType, icon: Palette, label: 'Hue Shift' },
+    ]
+  },
+  {
+    name: 'Color',
+    nodes: [
+      { type: 'grayscale' as NodeType, icon: Circle, label: 'Grayscale' },
+      { type: 'invert' as NodeType, icon: RotateCcw, label: 'Invert' },
+      { type: 'gradient-map' as NodeType, icon: Paintbrush, label: 'Gradient Map' },
     ]
   },
   {
@@ -22,15 +41,25 @@ const nodeCategories = [
       { type: 'sharpen' as NodeType, icon: Sparkles, label: 'Sharpen' },
       { type: 'noise' as NodeType, icon: Volume2, label: 'Noise' },
       { type: 'vignette' as NodeType, icon: Target, label: 'Vignette' },
+      { type: 'pixelate' as NodeType, icon: LayoutGrid, label: 'Pixelate' },
+      { type: 'displace' as NodeType, icon: Wind, label: 'Displace' },
     ]
   },
   {
-    name: 'Color',
+    name: 'Stylize',
     nodes: [
-      { type: 'grayscale' as NodeType, icon: Circle, label: 'Grayscale' },
-      { type: 'invert' as NodeType, icon: RotateCcw, label: 'Invert' },
+      { type: 'dither' as NodeType, icon: Hash, label: 'Dither' },
+      { type: 'noise-texture' as NodeType, icon: Zap, label: 'Noise Texture' },
     ]
-  }
+  },
+  {
+    name: 'Utility',
+    nodes: [
+      { type: 'transform' as NodeType, icon: Move, label: 'Transform' },
+      { type: 'mix-blend' as NodeType, icon: Layers, label: 'Mix / Blend' },
+      { type: 'mask' as NodeType, icon: Crop, label: 'Mask' },
+    ]
+  },
 ]
 
 interface AddNodePanelProps {
@@ -42,13 +71,12 @@ export function AddNodePanel({ isOpen, onClose }: AddNodePanelProps) {
   const { addNode, nodes } = useNodeStore()
 
   const handleAddNode = (type: NodeType) => {
-    // Count existing filter nodes to stagger placement so they don't stack
     const filterCount = nodes.filter(n => n.type !== 'image-input' && n.type !== 'output').length
     const offset = filterCount * 20
     addNode(type, 380 + offset, 180 + offset)
     onClose()
   }
-  
+
   return (
     <div
       className={cn(
@@ -68,8 +96,8 @@ export function AddNodePanel({ isOpen, onClose }: AddNodePanelProps) {
           <X className="w-3.5 h-3.5" />
         </button>
       </div>
-      
-      <div className="p-2 max-h-[400px] overflow-y-auto scrollbar-thin">
+
+      <div className="p-2 max-h-[420px] overflow-y-auto scrollbar-thin">
         {nodeCategories.map((category) => (
           <div key={category.name} className="mb-3">
             <div className="px-2 py-1.5">

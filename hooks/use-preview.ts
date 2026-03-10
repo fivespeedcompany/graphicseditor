@@ -9,7 +9,7 @@ export function usePreview() {
   const imageLoaded = useNodeStore(s => s.imageLoaded)
   const [preview, setPreview] = useState<string | null>(null)
   const [isProcessing, setIsProcessing] = useState(false)
-  const timer = useRef<ReturnType<typeof setTimeout>>()
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const inFlight = useRef(false)
   const pending = useRef<Graph | null>(null)
 
@@ -17,7 +17,7 @@ export function usePreview() {
   // latest graph and re-runs immediately when the current one finishes,
   // so rapid slider changes always reflect the most recent state without
   // flooding Rust with simultaneous requests.
-  const runRef = useRef<(graph: Graph) => Promise<void>>()
+  const runRef = useRef<((graph: Graph) => Promise<void>) | undefined>(undefined)
   runRef.current = async (graph: Graph) => {
     if (inFlight.current) {
       pending.current = graph
