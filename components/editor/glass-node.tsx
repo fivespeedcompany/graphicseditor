@@ -10,6 +10,8 @@ import { X, Image, Sun, Droplets, Palette, RotateCcw, Circle, Sparkles, Volume2,
 interface GlassNodeProps {
   node: NodeData
   isInChain: boolean
+  zoom?: number
+  thumbnailSrc?: string | null
   onStartConnection: (nodeId: string, portId: string, portType: 'input' | 'output', event: React.MouseEvent) => void
   onEndConnection: (nodeId: string, portId: string) => void
   onDragMove: (nodeId: string, x: number, y: number) => void
@@ -33,6 +35,8 @@ const nodeIcons: Record<string, React.ReactNode> = {
 export function GlassNode({
   node,
   isInChain,
+  zoom = 1,
+  thumbnailSrc,
   onStartConnection,
   onEndConnection,
   onDragMove,
@@ -49,8 +53,7 @@ export function GlassNode({
   } = useNodeStore()
   const nodeRef = useRef<HTMLDivElement>(null)
   const [isDragging, setIsDragging] = useState(false)
-  const [loadedFileName, setLoadedFileName] = useState<string | null>(null)
-  const dragStart = useRef({ x: 0, y: 0, nodeX: 0, nodeY: 0 })
+  const dragStart = useRef({ x: 0, y: 0, nodeX: 0, nodeY: 0, zoom: 1 })
 
   const isSelected = selectedNodeId === node.id
 
@@ -76,11 +79,13 @@ export function GlassNode({
       y: e.clientY,
       nodeX: node.x,
       nodeY: node.y,
+      zoom,
     }
 
     const handleMouseMove = (e: MouseEvent) => {
-      const dx = e.clientX - dragStart.current.x
-      const dy = e.clientY - dragStart.current.y
+      // Screen-space delta ÷ zoom = world-space delta
+      const dx = (e.clientX - dragStart.current.x) / dragStart.current.zoom
+      const dy = (e.clientY - dragStart.current.y) / dragStart.current.zoom
       const newX = dragStart.current.nodeX + dx
       const newY = dragStart.current.nodeY + dy
       // Update DOM directly — no React render cycle, position is instant
@@ -115,10 +120,9 @@ export function GlassNode({
     if (!path) return
     try {
       await loadImage(path)
-      const { convertFileSrc } = await import('@tauri-apps/api/core')
       setImageLoaded(true)
+      const { convertFileSrc } = await import('@tauri-apps/api/core')
       setBackgroundImage(convertFileSrc(path))
-      setLoadedFileName(path.split(/[\\/]/).pop() ?? path)
     } catch (err) {
       console.error('Failed to load image:', err)
     }
@@ -126,6 +130,7 @@ export function GlassNode({
 
   return (
     <div
+      data-node
       ref={nodeRef}
       className={cn(
         'absolute w-56 rounded-xl overflow-hidden transition-all duration-150 select-none',
@@ -133,8 +138,7 @@ export function GlassNode({
         'border border-[rgba(255,255,255,0.06)]',
         'shadow-[0_8px_32px_rgba(0,0,0,0.5),inset_0_1px_0_rgba(255,255,255,0.03)]',
         isDragging && 'cursor-grabbing scale-[1.02] shadow-[0_16px_48px_rgba(0,0,0,0.6)]',
-        isSelected && 'border-[rgba(255,255,255,0.15)] ring-1 ring-white/10',
-        !isInChain && 'opacity-40'
+        isSelected && 'border-[rgba(255,255,255,0.15)] ring-1 ring-white/10'
       )}
       style={{
         left: node.x,
@@ -248,12 +252,25 @@ export function GlassNode({
         {node.type === 'image-input' && (
           <button
             onClick={handleImageUpload}
-            className="w-full flex flex-col items-center justify-center gap-1.5 h-14 rounded-lg bg-white/5 border border-dashed border-white/10 hover:bg-white/10 hover:border-white/20 transition-all duration-150 cursor-pointer"
+            className="w-full overflow-hidden rounded-lg border border-dashed border-white/10 hover:border-white/25 transition-all duration-150 cursor-pointer group"
           >
-            <Upload className="w-3.5 h-3.5 text-white/40" />
-            <span className="text-[10px] text-white/40 truncate max-w-full px-2">
-              {loadedFileName ?? 'Upload Image'}
-            </span>
+            {thumbnailSrc ? (
+              <div className="relative h-20">
+                <img
+                  src={thumbnailSrc}
+                  alt="Input image"
+                  className="w-full h-full object-cover"
+                />
+                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-all duration-150 flex items-center justify-center">
+                  <Upload className="w-4 h-4 text-white opacity-0 group-hover:opacity-100 transition-opacity duration-150" />
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-col items-center justify-center gap-1.5 h-14 bg-white/5 hover:bg-white/10 transition-all duration-150">
+                <Upload className="w-3.5 h-3.5 text-white/40" />
+                <span className="text-[10px] text-white/40">Upload Image</span>
+              </div>
+            )}
           </button>
         )}
 

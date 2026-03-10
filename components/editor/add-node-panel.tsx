@@ -52,7 +52,7 @@ export function AddNodePanel({ isOpen, onClose }: AddNodePanelProps) {
   return (
     <div
       className={cn(
-        "absolute left-4 top-1/2 -translate-y-1/2 w-52 rounded-xl overflow-hidden transition-all duration-300 z-[200]",
+        "absolute left-4 top-1/2 -translate-y-1/2 w-52 rounded-xl overflow-hidden transition-all duration-300 z-[9999]",
         "bg-[rgba(12,12,12,0.9)] backdrop-blur-2xl",
         "border border-[rgba(255,255,255,0.05)]",
         "shadow-[0_24px_80px_rgba(0,0,0,0.6),inset_0_1px_0_rgba(255,255,255,0.02)]",
@@ -69,7 +69,7 @@ export function AddNodePanel({ isOpen, onClose }: AddNodePanelProps) {
         </button>
       </div>
       
-      <div className="p-2 max-h-[400px] overflow-y-auto">
+      <div className="p-2 max-h-[400px] overflow-y-auto scrollbar-thin">
         {nodeCategories.map((category) => (
           <div key={category.name} className="mb-3">
             <div className="px-2 py-1.5">
@@ -106,7 +106,7 @@ export function AddNodeButton({ onClick }: { onClick: () => void }) {
     <button
       onClick={onClick}
       className={cn(
-        "absolute left-4 bottom-4 z-[200] flex items-center gap-2.5 px-4 py-2.5 rounded-lg",
+        "absolute left-4 bottom-12 z-[200] flex items-center gap-2.5 px-4 py-2.5 rounded-lg",
         "bg-[rgba(12,12,12,0.85)] backdrop-blur-2xl",
         "border border-[rgba(255,255,255,0.06)]",
         "text-white/70 hover:text-white/95",
